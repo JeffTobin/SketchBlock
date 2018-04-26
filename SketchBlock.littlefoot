@@ -2,6 +2,8 @@
 <metadata>
    <variables>
       <variable name="pitchBend" displayName="Pitch Bend" type="bool" value="true"/>
+      <variable name="channel" displayName="Midi Channel" type="int" min="0" max="15" value="0" displayMode="stepper" />
+      <variable name="tempo" displayName="Tempo" type="float" min="60" max="180" value="120" displayMode="stepper" />
    </variables>
 </metadata>
 */
@@ -28,7 +30,6 @@ int   lastFrameTime;
 int   buttonPressedTime;
 int   buttonReleasedTime;
 
-float tempo;
 float tempoDelay;
 int   subdivision;
 
@@ -36,8 +37,8 @@ bool  pause;
 bool  allowRecording;
 
 int   octave;
-int   channel;
 int   selectedTrack;
+int   currentScale;
 int   numNotesInScale;
 
 int   sequenceLength;
@@ -64,10 +65,8 @@ void initialise(){
    setLocalConfigActiveState (22, true, true);
    
    subdivision = 0;
-   tempo = 120;
-   sequenceLength = 64;
-   channel = 2;
-   tempoDelay = (60000 / tempo) / 8;
+   sequenceLength = 32;
+   tempoDelay = (60000 / tempo) / 4;
    lastSubdivisionTime = getMillisecondCounter();
    lastFrameTime       = getMillisecondCounter();
    allowRecording = false;
@@ -87,6 +86,7 @@ void initialise(){
 
 //generates scale notes in heap--------------------------------------
 void initialiseScale(int scale){
+   currentScale = getLocalConfig(22);
    int scaleBitmask;
    
    if (scale == 0)        scaleBitmask = 0xab5;  // major
@@ -118,7 +118,7 @@ void initialiseScale(int scale){
    
    int mask = 1;
    int noteIndex = 0;
-   int noteNumber = 12;
+   int noteNumber = 36;
    int numNotesInSevenOctaves = numNotesInScale * 7;
    for(int i = 0; noteIndex < numNotesInSevenOctaves + 1; ++i){
       if(scaleBitmask & mask){
@@ -148,10 +148,10 @@ void drawFrame(){
    
    blendGradientRect(0xC0003380, 0xC0003380, 0xC0007033, 0xC0007033, 0, 2, 15, 13);
    
-   if(getMillisecondCounter() > buttonPressedTime + DELAY && allowRecording == true){
-         timeBarColor = 0xff0000;
-         part1Color   = 0xff0000;
-   }
+   fadePressureMap();
+   fadePressureMap();
+   drawPressureMap();
+   
    fillRect (part1Color,   0,  0, 3,  1);
    fillRect (part2Color,   3,  0, 3,  1);
    fillRect (part3Color,   6,  0, 3,  1);
@@ -162,14 +162,15 @@ void drawFrame(){
    fillRect (0x000905, (-10 + (octave * 2)), 14, 10, 1);
    fillRect (0x000905, (5 + (octave * 2))  , 14, 10, 1);
    
-   fadePressureMap();
-   fadePressureMap();
-   drawPressureMap();
-   
    if(pause == false){
-      fillRect (0xffffff, subdivision / 8, 1, 1, 1);
+      fillRect (0xffffff, subdivision / 4, 1, 1, 1);
       if(heldNote != 0)
          addPressurePoint (timeBarColor, heldNoteXLocation, 1.0, 10.0);
+   }
+   
+   if(getMillisecondCounter() > buttonPressedTime + DELAY && allowRecording == true){
+      timeBarColor = 0xff0000;
+      part1Color   = 0xff0000;
    }
 }
 
@@ -188,6 +189,9 @@ void repaint(){
          if(lastFrameTime + 40 < getMillisecondCounter()){
             lastFrameTime = getMillisecondCounter();
             break;
+         }
+         if(getLocalConfig(22) != currentScale){
+            initialiseScale(getLocalConfig(22));
          }
       }
    }
