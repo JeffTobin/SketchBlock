@@ -64,7 +64,7 @@ int   currentScale;
 int   numNotesInScale;
 
 int   sequenceLength;
-int   heldNoteStartBeat;
+int   noteStart;
 int   heldNote;
 float heldNoteXLocation;
 
@@ -225,8 +225,13 @@ void repaint(){
 
 //plays sequence, gets called on beat sudivisions--------------------
 void triggerNoteSequence(int subdivision){
-   if(allowRecording == false){
    
+   if(getHeapByte(85) == 0 &&
+      getHeapByte(86) == 0 &&
+      getHeapByte(87) == 0 &&
+      getHeapByte(88) == 0 &&
+      getHeapByte(89) == 0 
+   ){
       int stepNoteEnd = getHeapByte(((subdivision / 2) * 3) + 117);
       if(stepNoteEnd == heldNote){
          sendNoteOff(channel - 1, heldNote, 127);
@@ -241,11 +246,9 @@ void triggerNoteSequence(int subdivision){
          int velocity = getHeapByte(((subdivision / 2) * 3) + 116);
          sendNoteOn(channel - 1, stepNote, velocity);
          
-         heldNoteStartBeat = subdivision / 2;
          heldNote          = stepNote;
          heldNoteXLocation = map(float(stepNote), 36.0, 67.0, 0.07, 1.93);
       }
-   
    }
 }
 
@@ -270,14 +273,21 @@ void handleButtonDown(int index){
 void handleButtonUp(int index){
    if(getMillisecondCounter() < buttonPressedTime + DELAY){
       allowRecording = false;
-      if(pause == false){
-         pause = true;
-         selectTrack();
-      }
-      else{
+      
+      if(pause == true && getHeapInt(91 + (selectedTrack * 4)) == 0xff0000){
+         allowRecording = true;
          pause = false;
          lastSubdivisionTime = getMillisecondCounter();
          subdivision = 0;
+      }
+      else if(pause == true){
+         pause = false;
+         lastSubdivisionTime = getMillisecondCounter();
+         subdivision = 0;
+      }
+      else if(pause == false){
+         pause = true;
+         selectTrack();
       }
    }
 }
@@ -359,6 +369,22 @@ void touchMove(int index, float x, float y, float z, float vz){
       int value = clamp(0, 127, mapTouchToRange(y, 20.0, 175.0, 0.0, 127.0));
       value = 127 - value;   
       sendCC((channel - 1), 1, value);
+      
+      if(pause == false && allowRecording == true){
+         if(getHeapByte(85) != 0 ||
+            getHeapByte(86) != 0 ||
+            getHeapByte(87) != 0 ||
+            getHeapByte(88) != 0 ||
+            getHeapByte(89) != 0 
+         ){
+            int offsetSubdivision = ((subdivision + 1) / 2) % sequenceLength;
+            if(offsetSubdivision != noteStart){
+               setHeapByte((offsetSubdivision * 3) + 115, 0);
+               setHeapByte((offsetSubdivision * 3) + 117, 0);
+               noteStart = 0;
+            }
+         }
+      }
       //add after touch here---------------------------------
       
       addPressurePoint (timeBarColor, x, y, z * 20);
@@ -389,8 +415,16 @@ void noteOn(int index, float x, float vz){
    }
    if(pause == false && allowRecording == true){
       int offsetSubdivision = ((subdivision + 1) / 2) % sequenceLength;
+      
+      if(heldNote != 0){
+         sendNoteOff(channel - 1, heldNote, 127);
+         setHeapByte((offsetSubdivision * 3) + 117, heldNote);
+         heldNote = 0;
+      }
+      
       setHeapByte((offsetSubdivision * 3) + 115, note);   //record held note number
       setHeapByte((offsetSubdivision * 3) + 116, velocity);   //record held note velocity
+      noteStart = offsetSubdivision;
    }
    
    sendNoteOn(channel - 1, note, velocity);
