@@ -1,9 +1,10 @@
 /*
 <metadata>
-   <variables>
-      <variable name="pitchBend" displayName="Pitch Bend" type="bool" value="true"/>
-      <variable name="channel" displayName="Midi Channel" type="int" min="0" max="15" value="0" displayMode="stepper" />
-   </variables>
+	<variables>
+		<variable name="pitchBend" displayName="Pitch Bend" type="bool" value="true"/>
+		<variable name="channel" displayName="Midi Channel" type="int" min="1" max="12" value="1" displayMode="stepper" />
+		<variable name="tempo" displayName="Tempo" type="float" min="60" max="200" value="120" displayMode="stepper" />
+	</variables>
 </metadata>
 */
 
@@ -25,9 +26,11 @@
 // part4Color = 107 - 110
 // part5Color = 111 - 114
 //
-// part1 note number on  = 115, 118, 121, ...by 3s up till 
-// part1 note velocity   = 116, 119, 122, ...by 3s up till
-// part1 note number off = 117, 120, 123, ...by 3s up till
+// part1 note number on  = 115, 118, 121, ...by 3s up till 304
+// part1 note velocity   = 116, 119, 122, ...by 3s up till 305
+// part1 note number off = 117, 120, 123, ...by 3s up till 306
+//
+// part1 modulation = 307 - 434
 //
 // -------------------------------------------------------
 
@@ -35,7 +38,7 @@
 
 
 
-#heapsize: 3500
+#heapsize: 4300
 const int DELAY = 1000;
 
 const int PINK_COLOR     = 0xff0040;      const int DIM_PINK_COLOR   = 0x220008;
@@ -51,7 +54,6 @@ int   lastFrameTime;
 int   buttonPressedTime;
 int   buttonReleasedTime;
 
-float tempo;
 float tempoDelay;
 int   subdivision;
 
@@ -67,6 +69,7 @@ int   sequenceLength;
 int   noteStart;
 int   heldNote;
 float heldNoteXLocation;
+float heldNoteYLocation;
 
 
 
@@ -83,80 +86,79 @@ float heldNoteXLocation;
 //sets initial values------------------------------------------------
 void initialise(){
 
-   setLocalConfigActiveState (10, true, true);
-   setLocalConfigActiveState (13, true, true);
-   setLocalConfigActiveState (17, true, true);
-   setLocalConfigActiveState (22, true, true);
-   
-   subdivision = 0;
-   tempo = 120;
-   sequenceLength = 64;
-   tempoDelay = (60000 / tempo) / 8;
-   lastSubdivisionTime = getMillisecondCounter();
-   lastFrameTime       = getMillisecondCounter();
-   allowRecording = false;
-   pause = true;
-   octave = 2;
-   selectedTrack = 1;
-   
-   setHeapInt(95,  PURPLE_COLOR);
-   setHeapInt(99,  DIM_PINK_COLOR);
-   setHeapInt(103, DIM_ORANGE_COLOR);
-   setHeapInt(107, DIM_YELLOW_COLOR);
-   setHeapInt(111, DIM_GREEN_COLOR);
-   timeBarColor = PURPLE_COLOR;
-   
-   initialiseScale(getLocalConfig(22));
+	setLocalConfigActiveState (10, true, true);
+	setLocalConfigActiveState (13, true, true);
+	setLocalConfigActiveState (17, true, true);
+	setLocalConfigActiveState (22, true, true);
+	
+	subdivision = 0;
+	sequenceLength = 64;
+	tempoDelay = (60000 / tempo) / 8;
+	lastSubdivisionTime = getMillisecondCounter();
+	lastFrameTime       = getMillisecondCounter();
+	allowRecording = false;
+	pause = true;
+	octave = 2;
+	selectedTrack = 1;
+	
+	setHeapInt(95,  PURPLE_COLOR);
+	setHeapInt(99,  DIM_PINK_COLOR);
+	setHeapInt(103, DIM_ORANGE_COLOR);
+	setHeapInt(107, DIM_YELLOW_COLOR);
+	setHeapInt(111, DIM_GREEN_COLOR);
+	timeBarColor = PURPLE_COLOR;
+	
+	initialiseScale(getLocalConfig(22));
 }
 
 
 //generates scale notes in heap--------------------------------------
 void initialiseScale(int scale){
-   currentScale = getLocalConfig(22);
-   int scaleBitmask;
-   
-   if (scale == 0)        scaleBitmask = 0xab5;  // major
-   else if (scale == 1)   scaleBitmask = 0x5ad;  // minor
-   else if (scale == 2)   scaleBitmask = 0x9ad;  // harmonic minor
-   else if (scale == 3)   scaleBitmask = 0x4a5;  // pentatonic neutral
-   else if (scale == 4)   scaleBitmask = 0x295;  // pentatonic major
-   else if (scale == 5)   scaleBitmask = 0x4a9;  // pentatomic minor
-   else if (scale == 6)   scaleBitmask = 0x4e9;  // blues
-   else if (scale == 7)   scaleBitmask = 0x6ad;  // dorian
-   else if (scale == 8)   scaleBitmask = 0x5ab;  // phrygian
-   else if (scale == 9)   scaleBitmask = 0xad5;  // lydian
-   else if (scale == 10)  scaleBitmask = 0x6b5;  // mixolydian
-   else if (scale == 11)  scaleBitmask = 0x56b;  // locrian
-   else if (scale == 12)  scaleBitmask = 0x555;  // whole tone
-   else if (scale == 13)  scaleBitmask = 0xb6d;  // arabic (A)
-   else if (scale == 14)  scaleBitmask = 0x575;  // arabic (B)
-   else if (scale == 15)  scaleBitmask = 0x8d1;  // japanese
-   else if (scale == 16)  scaleBitmask = 0x8b1;  // ryukyu
-   else if (scale == 17)  scaleBitmask = 0x57b;  // 8-tone spanish
-   else                   scaleBitmask = 0xfff;  // chromatic
-   
-   int n = scaleBitmask;
-   n -= ((n >> 1) & 0x5555);
-   n =  (((n >> 2) & 0x3333) + (n & 0x3333));
-   n =  (((n >> 4) + n) & 0x0f0f);
-   n += (n >> 8);
-   numNotesInScale = n & 0x3f;
-   
-   int mask = 1;
-   int noteIndex = 0;
-   int noteNumber = 12;
-   int numNotesInSevenOctaves = numNotesInScale * 7;
-   for(int i = 0; noteIndex < numNotesInSevenOctaves + 1; ++i){
-      if(scaleBitmask & mask){
-         setHeapByte(noteIndex, noteNumber);
-         noteIndex++;
-      }
-      if(mask == 2048)
-         mask = 1;
-      else
-         mask <<= 1;
-      noteNumber++;
-   }
+	currentScale = getLocalConfig(22);
+	int scaleBitmask;
+	
+	if (scale == 0)        scaleBitmask = 0xab5;  // major
+	else if (scale == 1)   scaleBitmask = 0x5ad;  // minor
+	else if (scale == 2)   scaleBitmask = 0x9ad;  // harmonic minor
+	else if (scale == 3)   scaleBitmask = 0x4a5;  // pentatonic neutral
+	else if (scale == 4)   scaleBitmask = 0x295;  // pentatonic major
+	else if (scale == 5)   scaleBitmask = 0x4a9;  // pentatomic minor
+	else if (scale == 6)   scaleBitmask = 0x4e9;  // blues
+	else if (scale == 7)   scaleBitmask = 0x6ad;  // dorian
+	else if (scale == 8)   scaleBitmask = 0x5ab;  // phrygian
+	else if (scale == 9)   scaleBitmask = 0xad5;  // lydian
+	else if (scale == 10)  scaleBitmask = 0x6b5;  // mixolydian
+	else if (scale == 11)  scaleBitmask = 0x56b;  // locrian
+	else if (scale == 12)  scaleBitmask = 0x555;  // whole tone
+	else if (scale == 13)  scaleBitmask = 0xb6d;  // arabic (A)
+	else if (scale == 14)  scaleBitmask = 0x575;  // arabic (B)
+	else if (scale == 15)  scaleBitmask = 0x8d1;  // japanese
+	else if (scale == 16)  scaleBitmask = 0x8b1;  // ryukyu
+	else if (scale == 17)  scaleBitmask = 0x57b;  // 8-tone spanish
+	else                   scaleBitmask = 0xfff;  // chromatic
+	
+	int n = scaleBitmask;
+	n -= ((n >> 1) & 0x5555);
+	n =  (((n >> 2) & 0x3333) + (n & 0x3333));
+	n =  (((n >> 4) + n) & 0x0f0f);
+	n += (n >> 8);
+	numNotesInScale = n & 0x3f;
+	
+	int mask = 1;
+	int noteIndex = 0;
+	int noteNumber = 12;
+	int numNotesInSevenOctaves = numNotesInScale * 7;
+	for(int i = 0; noteIndex < numNotesInSevenOctaves + 1; ++i){
+		if(scaleBitmask & mask){
+			setHeapByte(noteIndex, noteNumber);
+			noteIndex++;
+		}
+		if(mask == 2048)
+			mask = 1;
+		else
+			mask <<= 1;
+		noteNumber++;
+	}
 }
 
 
@@ -170,86 +172,103 @@ void initialiseScale(int scale){
 
 //draws frame, gets called 25 times per second-----------------------
 void drawFrame(){
-   clearDisplay();
-   
-   blendGradientRect(0xC0001880, 0xC0001880, 0xC0007033, 0xC0007033, 0, 2, 15, 13);
-   
-   fadePressureMap();
-   fadePressureMap();
-   drawPressureMap();
-   
-   if(getMillisecondCounter() > buttonPressedTime + DELAY && allowRecording == true){
-      timeBarColor = 0xff0000;
-      setHeapInt(91 + (selectedTrack * 4), 0xff0000);
-   }
-   fillRect (getHeapInt(95),    0,  0, 3,  1);
-   fillRect (getHeapInt(99),    3,  0, 3,  1);
-   fillRect (getHeapInt(103),   6,  0, 3,  1);
-   fillRect (getHeapInt(107),   9,  0, 3,  1);
-   fillRect (getHeapInt(111),   12, 0, 3,  1);
-   fillRect (timeBarColor, 0,  1, 15, 1);
-   
-   fillRect (0x000905, (-10 + (octave * 2)), 14, 10, 1);
-   fillRect (0x000905, (5 + (octave * 2))  , 14, 10, 1);
-   
-   if(pause == false){
-      fillRect (0xffffff, subdivision / 8, 1, 1, 1);
-      if(heldNote != 0)
-         addPressurePoint (timeBarColor, heldNoteXLocation, 1.0, 10.0);
-   }
+	clearDisplay();
+	
+	blendGradientRect(0xC0001880, 0xC0001880, 0xC0007033, 0xC0007033, 0, 2, 15, 13);
+	
+	fadePressureMap();
+	fadePressureMap();
+	drawPressureMap();
+	
+	if(getMillisecondCounter() > buttonPressedTime + DELAY && allowRecording == true){
+		timeBarColor = 0xff0000;
+		setHeapInt(91 + (selectedTrack * 4), 0xff0000);
+	}
+	fillRect (getHeapInt(95),    0,  0, 3,  1);
+	fillRect (getHeapInt(99),    3,  0, 3,  1);
+	fillRect (getHeapInt(103),   6,  0, 3,  1);
+	fillRect (getHeapInt(107),   9,  0, 3,  1);
+	fillRect (getHeapInt(111),   12, 0, 3,  1);
+	fillRect (timeBarColor, 0,  1, 15, 1);
+	
+	fillRect (0x000905, (-10 + (octave * 2)), 14, 10, 1);
+	fillRect (0x000905, (5 + (octave * 2))  , 14, 10, 1);
+	
+	if(pause == false){
+		fillRect (0xffffff, subdivision / 8, 1, 1, 1);
+		if(heldNote != 0 && heldNoteXLocation > 0.0 && heldNoteXLocation < 1.97)
+			addPressurePoint (timeBarColor, heldNoteXLocation, heldNoteYLocation, 10.0);
+	}
+	//drawNumber(getHeapByte(subdivision + 307),0xffffffff,1,3);
+	//drawNumber(heldNote,0xffffffff,1,9);
 }
 
 
 //updates current subdivision, calls drawFrame & triggerSequence-----
 void repaint(){
-   if(isConnectedToHost()){
-      drawFrame();
-      while(true){
-         if(lastSubdivisionTime + tempoDelay < getMillisecondCounter() && pause != true){
-            lastSubdivisionTime += tempoDelay;
-            if(subdivision % 2 == 0)
-               triggerNoteSequence(subdivision);
-            subdivision = (subdivision + 1) % (sequenceLength * 2);
-         }
-         if(lastFrameTime + 40 < getMillisecondCounter()){
-            lastFrameTime = getMillisecondCounter();
-            break;
-         }
-         if(getLocalConfig(22) != currentScale){
-            initialiseScale(getLocalConfig(22));
-         }
-      }
-   }
+	if(isConnectedToHost()){
+		drawFrame();
+		while(true){
+			if(lastSubdivisionTime + tempoDelay < getMillisecondCounter() && pause != true){
+				lastSubdivisionTime += tempoDelay;
+				if(subdivision % 2 == 0)
+					triggerNoteSequence();
+				triggerModSequence();
+				subdivision = (subdivision + 1) % (sequenceLength * 2);
+			}
+			if(lastFrameTime + 40 < getMillisecondCounter()){
+				lastFrameTime = getMillisecondCounter();
+				break;
+			}
+			if(getLocalConfig(22) != currentScale){
+				initialiseScale(getLocalConfig(22));
+			}
+		}
+	}
 }
 
 
 //plays sequence, gets called on beat sudivisions--------------------
-void triggerNoteSequence(int subdivision){
-   
-   if(getHeapByte(85) == 0 &&
-      getHeapByte(86) == 0 &&
-      getHeapByte(87) == 0 &&
-      getHeapByte(88) == 0 &&
-      getHeapByte(89) == 0 
-   ){
-      int stepNoteEnd = getHeapByte(((subdivision / 2) * 3) + 117);
-      if(stepNoteEnd == heldNote){
-         sendNoteOff(channel - 1, heldNote, 127);
-         heldNote = 0;
-      }
-      
-      int stepNote = getHeapByte(((subdivision / 2) * 3) + 115);
-      if(stepNote != 0){
-         if(heldNote != 0)
-            sendNoteOff(channel - 1, heldNote, 127);
-         
-         int velocity = getHeapByte(((subdivision / 2) * 3) + 116);
-         sendNoteOn(channel - 1, stepNote, velocity);
-         
-         heldNote          = stepNote;
-         heldNoteXLocation = map(float(stepNote), 36.0, 67.0, 0.07, 1.93);
-      }
-   }
+void triggerNoteSequence(){
+	
+	if(allowRecording == false ||
+	  (getHeapByte(85) == 0 &&
+		getHeapByte(86) == 0 &&
+		getHeapByte(87) == 0 &&
+		getHeapByte(88) == 0 &&
+		getHeapByte(89) == 0)
+	){
+		int stepNoteEnd = getHeapByte(((subdivision / 2) * 3) + 117);
+		if(stepNoteEnd == heldNote){
+			sendNoteOff(channel - 1, heldNote, 127);
+			heldNote = 0;
+		}
+		
+		int stepNote = getHeapByte(((subdivision / 2) * 3) + 115);
+		if(stepNote != 0){
+			if(heldNote != 0)
+				sendNoteOff(channel - 1, heldNote, 127);
+			
+			int velocity = getHeapByte(((subdivision / 2) * 3) + 116);
+			sendNoteOn(channel - 1, stepNote, velocity);
+			
+			heldNote = stepNote;
+			int noteRange = (numNotesInScale * 2 >= 13) ? 13 : (numNotesInScale * 2);
+			heldNoteXLocation = map(float(stepNote), float(getHeapByte(numNotesInScale * octave)), float(getHeapByte((numNotesInScale * octave) + noteRange)), 0.07, 1.93);
+		}
+	}
+}
+
+
+//sends modulation sequence, gets called twice as often as triggerNoteSequence
+void triggerModSequence(){
+	if(heldNote != 0){
+		int modValue = getHeapByte(subdivision + 307);
+		sendCC((channel - 1), 1, modValue);
+		
+		modValue = 127 - modValue;
+		heldNoteYLocation = map(float(modValue), 0.0, 127.0, 0.2, 1.75);
+	}
 }
 
 
@@ -264,32 +283,36 @@ void triggerNoteSequence(int subdivision){
 
 //starts button pressed timer----------------------------------------
 void handleButtonDown(int index){
-   buttonPressedTime = getMillisecondCounter();
-   allowRecording = true;
+	buttonPressedTime = getMillisecondCounter();
+	allowRecording = true;
 }
 
 
 //checks if button was clicked, held, or double clicked--------------
 void handleButtonUp(int index){
-   if(getMillisecondCounter() < buttonPressedTime + DELAY){
-      allowRecording = false;
-      
-      if(pause == true && getHeapInt(91 + (selectedTrack * 4)) == 0xff0000){
-         allowRecording = true;
-         pause = false;
-         lastSubdivisionTime = getMillisecondCounter();
-         subdivision = 0;
-      }
-      else if(pause == true){
-         pause = false;
-         lastSubdivisionTime = getMillisecondCounter();
-         subdivision = 0;
-      }
-      else if(pause == false){
-         pause = true;
-         selectTrack();
-      }
-   }
+	if(getMillisecondCounter() < buttonPressedTime + DELAY){
+		allowRecording = false;
+		
+		if(pause == true && getHeapInt(91 + (selectedTrack * 4)) == 0xff0000){
+			allowRecording = true;
+			pause = false;
+			lastSubdivisionTime = getMillisecondCounter();
+			subdivision = 0;
+		}
+		else if(pause == true){
+			pause = false;
+			lastSubdivisionTime = getMillisecondCounter();
+			subdivision = 0;
+		}
+		else if(pause == false){
+			pause = true;
+			selectTrack();
+			if(heldNote != 0){
+				sendNoteOff(channel - 1, heldNote, 127);
+				heldNote = 0;
+			}
+		}
+	}
 }
 
 
@@ -304,91 +327,90 @@ void handleButtonUp(int index){
 
 //determine touches action-------------------------------------------
 void touchStart(int index, float x, float y, float z, float vz){
-   //limit roli block to 5 touch events
-   if(index <= 5){
-      if(y <= 0.15 && index == 1){
-         selectedTrack = mapTouchToRange(x, 7.0, 170.0, 1.0, 5.0);
-         selectTrack();
-      }
-      else if(y > 0.15 && y < 1.93){
-         noteOn(index, x, vz);
-         touchMove(index, x, y, z, vz);
-      }
-      else if(y >= 1.93 && index == 1)
-         octave = (mapTouchToRange(x, 7.0, 170.0, 0.0, 5.0));
-   }
+	//limit roli block to 5 touch events
+	if(index <= 5){
+		if(y <= 0.15 && index == 1){
+			selectedTrack = mapTouchToRange(x, 7.0, 170.0, 1.0, 5.0);
+			selectTrack();
+		}
+		else if(y > 0.15 && y < 1.93){
+			noteOn(index, x, vz);
+			touchMove(index, x, y, z, vz);
+		}
+		else if(y >= 1.93 && index == 1)
+			octave = (mapTouchToRange(x, 7.0, 170.0, 0.0, 5.0));
+	}
 }
 
 
 //send note off for notes--------------------------------------------
 void touchEnd(int index, float x, float y, float z, float vz){
-   //limit roli block to 5 touch events and checks if touch is a held note
-   if(index <= 5 && getHeapByte(index + 84) != 0)
-      noteOff(index, vz);
+	//limit roli block to 5 touch events and checks if touch is a held note
+	if(index <= 5 && getHeapByte(index + 84) != 0)
+		noteOff(index, vz);
 }
 
 
 //send out note CC, pitchbend, and pressure data---------------------
 void touchMove(int index, float x, float y, float z, float vz){
-   
-   //limit roli block to 5 held notes and checks if touch is a held note
-   if(index <= 5 && getHeapByte(index + 84) != 0){
-      
-      int noteRange = (numNotesInScale * 2 >= 13) ? 13 : (numNotesInScale * 2);
-      int noteNumber = (octave * numNotesInScale) + mapTouchToRange(x, -7.0, 193.0, 0.0, float(noteRange));
-      int note = getHeapByte(noteNumber);
-      
-      //checks if touch moved along x axis away from note stating location
-      if(getHeapByte(index + 84) != note){
-         
-         //if piano mode is on, when note drifts to note over, end current not & start new note
-         int sampleNoteDelay = getHeapByte(index + 89);
-         if(getLocalConfig(17) == 1 && sampleNoteDelay == 2){
-            setHeapByte(index + 89, 0);
-            noteOff(index, z);
-            noteOn(index, x, z);
-         }
-         //sample note drift twice for more accuracy
-         else if(getLocalConfig(17) == 1 && sampleNoteDelay != 2)
-            setHeapByte(index + 89, sampleNoteDelay + 1);
-         
-         //handle pitch bend
-         else if(pitchBend == true){
-            float octaveRangeStartNote = getHeapByte((octave * numNotesInScale));
-            float octaveRangeEndNote   = getHeapByte(((octave + 2) * numNotesInScale));
-            float initialX = map(float(getHeapByte(index + 84)), octaveRangeStartNote, octaveRangeEndNote, 0.07, 1.93);
-            int pitchwheelValue = clamp(0, 16383, int(map(x - initialX, -1.86, 1.86, 0.0, 16383.0)));
-            sendPitchBend(channel - 1, pitchwheelValue);
-         }
-      }
-      //touch has not moved off of current note 
-      else
-         sendPitchBend(channel - 1, 8192);
-      
-      //send y axis mod value
-      int value = clamp(0, 127, mapTouchToRange(y, 20.0, 175.0, 0.0, 127.0));
-      value = 127 - value;   
-      sendCC((channel - 1), 1, value);
-      
-      if(pause == false && allowRecording == true){
-         if(getHeapByte(85) != 0 ||
-            getHeapByte(86) != 0 ||
-            getHeapByte(87) != 0 ||
-            getHeapByte(88) != 0 ||
-            getHeapByte(89) != 0 
-         ){
-            int offsetSubdivision = ((subdivision + 1) / 2) % sequenceLength;
-            if(offsetSubdivision != noteStart){
-               setHeapByte((offsetSubdivision * 3) + 115, 0);
-               setHeapByte((offsetSubdivision * 3) + 117, 0);
-               noteStart = 0;
-            }
-         }
-      }
-      //add after touch here---------------------------------
-      
-      addPressurePoint (timeBarColor, x, y, z * 20);
-   }
+	
+	//limit roli block to 5 held notes and checks if touch is a held note
+	if(index <= 5 && getHeapByte(index + 84) != 0){
+		
+		int noteRange = (numNotesInScale * 2 >= 13) ? 13 : (numNotesInScale * 2);
+		int noteNumber = (octave * numNotesInScale) + mapTouchToRange(x, -7.0, 193.0, 0.0, float(noteRange));
+		int note = getHeapByte(noteNumber);
+		
+		//checks if touch moved along x axis away from note stating location
+		if(getHeapByte(index + 84) != note){
+			
+			//if piano mode is on, when note drifts to note over, end current not & start new note
+			int sampleNoteDelay = getHeapByte(index + 89);
+			if(getLocalConfig(17) == 1 && sampleNoteDelay == 2){
+				setHeapByte(index + 89, 0);
+				noteOff(index, z);
+				noteOn(index, x, z);
+			}
+			//sample note drift twice for more accuracy
+			else if(getLocalConfig(17) == 1 && sampleNoteDelay != 2)
+				setHeapByte(index + 89, sampleNoteDelay + 1);
+			
+			//handle pitch bend
+			else if(pitchBend == true){
+				float octaveRangeStartNote = getHeapByte((octave * numNotesInScale));
+				float octaveRangeEndNote   = getHeapByte(((octave + 2) * numNotesInScale));
+				float initialX = map(float(getHeapByte(index + 84)), octaveRangeStartNote, octaveRangeEndNote, 0.07, 1.93);
+				int pitchwheelValue = clamp(0, 16383, int(map(x - initialX, -1.86, 1.86, 0.0, 16383.0)));
+				sendPitchBend(channel - 1, pitchwheelValue);
+			}
+		}
+		//touch has not moved off of current note 
+		else
+			sendPitchBend(channel - 1, 8192);
+		
+		
+		//send y axis mod value
+		int modValue = clamp(0, 127, mapTouchToRange(y, 20.0, 175.0, 0.0, 127.0));
+		modValue = 127 - modValue;   
+		sendCC((channel - 1), 1, modValue);
+		//add after touch here---------------------------------
+		
+		
+		if(pause == false && allowRecording == true){
+			int offsetSubdivision = ((subdivision + 1) / 2) % sequenceLength;
+			if(offsetSubdivision != noteStart){
+				//erase previous notes while overdubbing
+				setHeapByte((offsetSubdivision * 3) + 115, 0);
+				setHeapByte((offsetSubdivision * 3) + 117, 0);
+				noteStart = 0;
+			}
+			//record modulation
+			setHeapByte((offsetSubdivision * 2) + 307, modValue);
+			setHeapByte((offsetSubdivision * 2) + 308, modValue);
+		}
+		
+		addPressurePoint (timeBarColor, x, y, z * 20);
+	}
 }
 
 
@@ -403,47 +425,47 @@ void touchMove(int index, float x, float y, float z, float vz){
 
 //send note on midi message------------------------------------------
 void noteOn(int index, float x, float vz){
-   int noteRange = (numNotesInScale * 2 >= 13) ? 13 : (numNotesInScale * 2);
-   int noteNumber = (octave * numNotesInScale) + mapTouchToRange(x, -7.0, 193.0, 0.0, float(noteRange));
-   int note = getHeapByte(noteNumber);
-   int velocity = clamp (1, 127, int (vz * 127.0));
-   
-   if(pause == true && allowRecording == true){
-      pause = false;
-      lastSubdivisionTime = getMillisecondCounter();
-      subdivision = 0;
-   }
-   if(pause == false && allowRecording == true){
-      int offsetSubdivision = ((subdivision + 1) / 2) % sequenceLength;
-      
-      if(heldNote != 0){
-         sendNoteOff(channel - 1, heldNote, 127);
-         setHeapByte((offsetSubdivision * 3) + 117, heldNote);
-         heldNote = 0;
-      }
-      
-      setHeapByte((offsetSubdivision * 3) + 115, note);   //record held note number
-      setHeapByte((offsetSubdivision * 3) + 116, velocity);   //record held note velocity
-      noteStart = offsetSubdivision;
-   }
-   
-   sendNoteOn(channel - 1, note, velocity);
-   setHeapByte(index + 84, note);    //set held note
+	int noteRange = (numNotesInScale * 2 >= 13) ? 13 : (numNotesInScale * 2);
+	int noteNumber = (octave * numNotesInScale) + mapTouchToRange(x, -7.0, 193.0, 0.0, float(noteRange));
+	int note = getHeapByte(noteNumber);
+	int velocity = clamp (1, 127, int (vz * 127.0));
+	
+	if(pause == true && allowRecording == true){
+		pause = false;
+		lastSubdivisionTime = getMillisecondCounter();
+		subdivision = 0;
+	}
+	if(pause == false && allowRecording == true){
+		int offsetSubdivision = ((subdivision + 1) / 2) % sequenceLength;
+		
+		if(heldNote != 0){
+			sendNoteOff(channel - 1, heldNote, 127);
+			setHeapByte((offsetSubdivision * 3) + 117, heldNote);
+			heldNote = 0;
+		}
+		
+		setHeapByte((offsetSubdivision * 3) + 115, note);   //record held note number
+		setHeapByte((offsetSubdivision * 3) + 116, velocity);   //record held note velocity
+		noteStart = offsetSubdivision;
+	}
+	
+	sendNoteOn(channel - 1, note, velocity);
+	setHeapByte(index + 84, note);    //set held note
 }
 
 
 //send note off midi message-----------------------------------------
 void noteOff(int index, float vz){
-   int note = getHeapByte(index + 84);
-   int velocity = clamp (1, 127, int (vz * 127.0));
-   sendNoteOff(channel - 1, note, velocity);
-   sendPitchBend(channel - 1, 8192);
-   setHeapByte(index + 84, 0);   //set held note off
-   
-   if(pause == false && allowRecording == true){
-      int offsetSubdivision = ((subdivision + 1) / 2) % sequenceLength;
-      setHeapByte((offsetSubdivision * 3) + 117, note);
-   }
+	int note = getHeapByte(index + 84);
+	int velocity = clamp (1, 127, int (vz * 127.0));
+	sendNoteOff(channel - 1, note, velocity);
+	sendPitchBend(channel - 1, 8192);
+	setHeapByte(index + 84, 0);   //set held note off
+	
+	if(pause == false && allowRecording == true){
+		int offsetSubdivision = ((subdivision + 1) / 2) % sequenceLength;
+		setHeapByte((offsetSubdivision * 3) + 117, note);
+	}
 }
 
 
@@ -458,36 +480,36 @@ void noteOff(int index, float vz){
 
 //re-map range to scaled up intiger----------------------------------
 int mapTouchToRange(float v, float inMin, float inMax, float outMin, float outMax){
-   return int(map(v * 100, inMin, inMax, outMin, outMax));
+	return int(map(v * 100, inMin, inMax, outMin, outMax));
 }
 
 
 //re-color selected track--------------------------------------------
 void selectTrack(){
-   setHeapInt(95,  DIM_PURPLE_COLOR);
-   setHeapInt(99,  DIM_PINK_COLOR);
-   setHeapInt(103, DIM_ORANGE_COLOR);
-   setHeapInt(107, DIM_YELLOW_COLOR);
-   setHeapInt(111, DIM_GREEN_COLOR);
-   
-   if(selectedTrack == 1){
-      setHeapInt(95, PURPLE_COLOR);
-      timeBarColor = PURPLE_COLOR;
-   }
-   else if(selectedTrack == 2){
-      setHeapInt(99, PINK_COLOR);
-      timeBarColor = PINK_COLOR;
-   }
-   else if(selectedTrack == 3){
-      setHeapInt(103, ORANGE_COLOR);
-      timeBarColor =  ORANGE_COLOR;
-   }
-   else if(selectedTrack == 4){
-      setHeapInt(107, YELLOW_COLOR);
-      timeBarColor =  YELLOW_COLOR;
-   }
-   else if(selectedTrack == 5){
-      setHeapInt(111, GREEN_COLOR);
-      timeBarColor =  GREEN_COLOR;
-   }
+	setHeapInt(95,  DIM_PURPLE_COLOR);
+	setHeapInt(99,  DIM_PINK_COLOR);
+	setHeapInt(103, DIM_ORANGE_COLOR);
+	setHeapInt(107, DIM_YELLOW_COLOR);
+	setHeapInt(111, DIM_GREEN_COLOR);
+	
+	if(selectedTrack == 1){
+		setHeapInt(95, PURPLE_COLOR);
+		timeBarColor = PURPLE_COLOR;
+	}
+	else if(selectedTrack == 2){
+		setHeapInt(99, PINK_COLOR);
+		timeBarColor = PINK_COLOR;
+	}
+	else if(selectedTrack == 3){
+		setHeapInt(103, ORANGE_COLOR);
+		timeBarColor =  ORANGE_COLOR;
+	}
+	else if(selectedTrack == 4){
+		setHeapInt(107, YELLOW_COLOR);
+		timeBarColor =  YELLOW_COLOR;
+	}
+	else if(selectedTrack == 5){
+		setHeapInt(111, GREEN_COLOR);
+		timeBarColor =  GREEN_COLOR;
+	}
 }
