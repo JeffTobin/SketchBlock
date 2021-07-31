@@ -1,41 +1,10 @@
-/*
-<metadata>
-	<variables>
-		<variable name="Channel" displayName="Midi Channel" type="int" min="1" max="12" value="1" displayMode="stepper" />
-	</variables>
-</metadata>
-*/
-
-
-
-
 
 // --------------------- HEAP LAYOUT ---------------------
 //
-// current keyboard scale notes = 0 - 84
-//
-// current drum pad notes = 85 - 124
-//
-//
-// --TODO--
-//
-// part1 notes      = 200 - 263
-// part1 velocity   = 264 - 327
-// part1 modulation = 328 - 455
-//
-// part2 notes      = 456 - 519
-// part2 velocity   = 520 - 583
-// part2 modulation = 584 - 711
-//
-// part3 notes      = 712 - 775
-// part3 velocity   = 776 - 839
-// part3 modulation = 840 - 967
-//
-// part4 notes      =  968 - 1031
-// part4 velocity   = 1032 - 1095
-// part4 modulation = 1096 - 1223
-//
-// drum parts = 1224 - 2503 (64 each x 20 parts)
+// current keyboard scale notes:    0 - 96
+// current track's keyboard mode:   97 - 103
+// track colors:                    104 - 131
+// dim track colors:                132 - 159
 //
 // -------------------------------------------------------
 
@@ -47,21 +16,17 @@
 const int SHORT_DELAY = 1000;
 const int LONG_DELAY  = 2000;
 
-const int PINK_COLOR       = 0xff0044;      const int DIM_PINK_COLOR   = 0x220011;
-const int ORANGE_COLOR     = 0xff8800;      const int DIM_ORANGE_COLOR = 0x221100;
-const int YELLOW_COLOR     = 0x88ff00;      const int DIM_YELLOW_COLOR = 0x112200;
-const int AUQA_COLOR       = 0x00ff88;      const int DIM_AUQA_COLOR   = 0x002211;
-const int PURPLE_COLOR     = 0x8800ff;      const int DIM_PURPLE_COLOR = 0x110022;
-const int WHITE_COLOR      = 0xffffff;      const int DIM_WHITE_COLOR  = 0x222222;
-const int RECORDING_COLOR  = 0xff0000;
-
 const int WARMER_PAD_COLOR        = 0x44FFFF00;     const int COOLER_PAD_COLOR        = 0x4400FFFF;
 const int DIM_WARMER_PAD_COLOR    = 0x22FFFF00;     const int DIM_COOLER_PAD_COLOR    = 0x2200FFFF;
 const int MEDIUM_WARMER_PAD_COLOR = 0x88FFFF00;     const int MEDIUM_COOLER_PAD_COLOR = 0x8800FFFF;
 const int BRIGHT_WARMER_PAD_COLOR = 0xFFFFFF00;     const int BRIGHT_COOLER_PAD_COLOR = 0xFF00FFFF;
+const int WHITE_COLOR             = 0xffffff;       const int DIM_WHITE_COLOR         = 0x222222;
+const int PURPLE_COLOR            = 0x8800ff;
+
+const int KEYBOARD = 1;
+const int PADS = 2;
 
 int   SelectedTrack;
-int   SelectedTrackColor;
 
 int   ButtonPressedTime;
 bool  IsButtonHeld;
@@ -73,10 +38,6 @@ int   Tempo;
 float TempoDelay;
 int   SequenceLength;
 int   Subdivision;
-
-float RepeaterLastSubdivisionTime;
-int   RepeaterSubdivision;
-int   RepeaterFrequency;
 
 bool  Pause;
 bool  IsRecording;
@@ -90,9 +51,7 @@ int   CurrentScale;
 int   NumNotesInScale;
 
 int   HeldNote;
-int   HeldVelocity;
-int   HeldKeyboardNoteNumber;
-int   HeldPadNoteNumber;
+int   HeldNoteNumber;
 
 int   LastTouchIndex;
 int   LastTouchIndexStart;
@@ -120,13 +79,34 @@ void initialise(){
 	Pause               = true;
 	CurrentOctave       = 3;
 	SelectedTrack       = 0;
-	RepeaterFrequency   = 4;
-	
+	HeldNote            = -1;
+    HeldNoteNumber      = -1;
+
+    initialiseTracks();
 	initialiseScale();
 	
-	for (int i = 0; i < 20; i++){
-	    setHeapByte(85 + i, 48 + i);
-	}
+	setTrackColor(0, 0x8800ff); //PURPLE_COLOR
+	setTrackColor(1, 0xff0044); //TEST2_COLOR
+	setTrackColor(2, 0xff8800); //ORANGE_COLOR
+	setTrackColor(3, 0x88ff00); //YELLOW_COLOR
+	setTrackColor(4, 0x00ff00); //GREEN_COLOR
+	setTrackColor(5, 0x00ff88); //AUQA_COLOR
+	setTrackColor(6, 0x0000ff); //BLUE_COLOR
+	
+	setDimTrackColor(0, 0x110022); //DIM_PURPLE_COLOR
+	setDimTrackColor(1, 0x220011); //DIM_TEST2_COLOR
+    setDimTrackColor(2, 0x221100); //DIM_ORANGE_COLOR
+    setDimTrackColor(3, 0x112200); //DIM_YELLOW_COLOR
+	setDimTrackColor(4, 0x002200); //DIM_GREEN_COLOR
+	setDimTrackColor(5, 0x002211); //DIM_AUQA_COLOR
+	setDimTrackColor(6, 0x000022); //DIM_BLUE_COLOR
+}
+
+//Initialize Tracks--------------------------------------------------
+void initialiseTracks(){
+    for (int i = 97; i < 104; i++){
+        setHeapByte(i, 1);
+    }
 }
 
 //generates scale notes in heap--------------------------------------
@@ -161,7 +141,7 @@ void initialiseScale(){
 	int mask = 1;
 	int noteIndex = 0;
 	int noteNumber = 12 + RootNote;
-	int numNotesInSevenCurrentOctaves = NumNotesInScale * 7;
+	int numNotesInSevenCurrentOctaves = NumNotesInScale * 8;
 	for(int i = 0; noteIndex < numNotesInSevenCurrentOctaves + 1; ++i){
 		if(ScaleBitMask & mask){
 			setHeapByte(noteIndex, noteNumber);
@@ -226,30 +206,19 @@ void drawGlobalSettingsPage(){
 
 //draws tracks-------------------------------------------------------
 void drawTracks(){
-	fillRect(DIM_AUQA_COLOR, 0,  0, 3,  1);
-	fillRect(DIM_PURPLE_COLOR,   3,  0, 3,  1);
-	fillRect(DIM_PINK_COLOR, 6,  0, 3,  1);
-	fillRect(DIM_ORANGE_COLOR, 9,  0, 3,  1);
-	fillRect(DIM_YELLOW_COLOR,  12, 0, 3,  1);
+    for (int i = 0; i < 7; i++){
+        if(i < SelectedTrack)
+            fillRect(getDimTrackColor(i), i * 2, 0, 2, 1);
+        else if (i == SelectedTrack)
+            fillRect(getTrackColor(i), i * 2, 0, 3, 1);
+        else if (i > SelectedTrack)
+            fillRect(getDimTrackColor(i), (i * 2) + 1, 0, 2, 1);
+    }
+    
+ 	fillRect(getTrackColor(SelectedTrack), 0, 1, 15, 1);
 	
-	if(IsRecording)
-	    SelectedTrackColor = RECORDING_COLOR;
-	else if(SelectedTrack == 0)
-		SelectedTrackColor = AUQA_COLOR;
-	else if(SelectedTrack == 1)
-		SelectedTrackColor = PURPLE_COLOR;
-	else if(SelectedTrack == 2)
-		SelectedTrackColor = PINK_COLOR;
-	else if(SelectedTrack == 3)
-		SelectedTrackColor = ORANGE_COLOR;
-	else if(SelectedTrack == 4)
-		SelectedTrackColor = YELLOW_COLOR;
-		
-	fillRect(SelectedTrackColor, (SelectedTrack * 3), 0, 3,  1);
-	fillRect(SelectedTrackColor, 0, 1, 15, 1);
-	
-	if (SelectedTrack == 4)
-	    drawDrumPads();
+	if (getSelectedTrackCurrentPage() == PADS)
+	    drawPads();
 	else
 	    drawKeyboard();
 	    
@@ -259,24 +228,30 @@ void drawTracks(){
 }
 
 void drawKeyboard(){
-    blendGradientRect(0xC0001880, 0xC0001880, 0xC0007033, 0xC0007033, 0, 2, 15, 13);
+    blendGradientRect(0x44001880, 0x44001880, 0x66007033, 0x66007033, 0, 2, 15, 12);   	
     
-	drawPressureMap();
+// 	int padNumber = (CurrentOctave * NumNotesInScale);
+// 	for (int row = 0; row < 4; row++ ) {
+//         for (int column = 0; column < 7; column++){
+//             blendRect(DIM_WARMER_PAD_COLOR, (column * 2) + 1, (row * 3) + 3, 1, 1);
+//             padNumber++;
+//         }
+//     }
 	
-	fillRect(0x000905, (-10 + (CurrentOctave * 2)), 14, 10, 1);
-	fillRect(0x000905, (5 + (CurrentOctave * 2))  , 14, 10, 1);
+    drawPressureMap();
+	drawOctaveSelector();
 }
 
-void drawDrumPads(){
+void drawPads(){
     blendGradientRect(0x44001880, 0x44001880, 0x44007033, 0x44007033, 0, 2, 15, 12);
     
-    int padNumber = 1;
+    int padNumber = (CurrentOctave * NumNotesInScale);
     for (int row = 0; row < 4; row++ ) {
         for (int column = 0; column < 5; column++){
             
             int padTopColor;
             int padBottomColor;
-            if (HeldPadNoteNumber == padNumber) {
+            if (HeldNoteNumber == padNumber) {
                 padTopColor = padNumber % 2 == 0 ? BRIGHT_COOLER_PAD_COLOR : MEDIUM_WARMER_PAD_COLOR;
                 padBottomColor = padNumber % 2 == 0 ? MEDIUM_COOLER_PAD_COLOR : BRIGHT_WARMER_PAD_COLOR;
             }
@@ -290,8 +265,13 @@ void drawDrumPads(){
         }
     }
     
-    fillRect(WHITE_COLOR, 0, 14, RepeaterFrequency, 1);
+    drawOctaveSelector();
+}
 
+void drawOctaveSelector(){
+    blendRect(0x66007033, 0, 14, 15, 1);
+    blendRect(0xDD000000, (-10 + (CurrentOctave * 2)), 14, 10, 1);
+	blendRect(0xDD000000, (5 + (CurrentOctave * 2))  , 14, 10, 1);
 }
 
 //draws frame, gets called 25 times per second-----------------------
@@ -319,11 +299,6 @@ void repaint(){
 				//triggerModSequence();
 				Subdivision = (Subdivision + 1) % (SequenceLength * 2);
 				
-			}
-			if(RepeaterLastSubdivisionTime + (TempoDelay * 2) < getMillisecondCounter()){
-			    RepeaterLastSubdivisionTime += (TempoDelay * 2);
-			    padRepeater();
-			    RepeaterSubdivision = (RepeaterSubdivision + 1) % SequenceLength;
 			}
 			if(LastFrameTime + 40 < getMillisecondCounter()){
 				LastFrameTime = getMillisecondCounter();
@@ -370,15 +345,11 @@ void handleButtonUp(int index){
 		if(IsSettingsOpen){
             IsSettingsOpen = false;
 		}
-		else if(Pause == true){
-			Pause = false;
-			LastSubdivisionTime = getMillisecondCounter();
-			Subdivision = 0;
+		else if (getSelectedTrackCurrentPage() == KEYBOARD){
+			setSelectedTrackCurrentPage(2);
 		}
-		else if(Pause == false){
-			Pause = true;
-			IsRecording = false;
-			noteOff(0.0);
+		else if (getSelectedTrackCurrentPage() == PADS){
+			setSelectedTrackCurrentPage(1);
 		}
 	}
 }
@@ -394,7 +365,7 @@ void handleButtonUp(int index){
 //determine touches action-------------------------------------------
 void touchStart(int index, float x, float y, float z, float vz){
 	if(IsSettingsOpen)
-	    settingsPageTouchStart(index, x, y, z, vz);
+	    settingsPageTouch(index, x, y, z, vz);
 	else
 	    mainPageTouchStart(index, x, y, z, vz);
 }
@@ -402,7 +373,7 @@ void touchStart(int index, float x, float y, float z, float vz){
 //send out note CC, pitchbend, and pressure data---------------------
 void touchMove(int index, float x, float y, float z, float vz){
 	if(IsSettingsOpen)
-	    settingsPageTouchMove(index, x, y, z, vz);
+	    settingsPageTouch(index, x, y, z, vz);
 	else
 	    mainPageTouchMove(index, x, y, z, vz);
 }
@@ -435,34 +406,30 @@ void mainPageTouchStart(int index, float x, float y, float z, float vz){
 	//determine touch action
 	if(index <= 5){
 		if(y <= 0.15 && index == 1)
-			SelectedTrack = mapTouchToRange(x, 7.0, 170.0, 0.0, 4.0);
+			SelectedTrack = mapTouchToRange(x, 7.0, 170.0, 0.0, 6.0);
 		else if(y > 0.15 && y < 1.93)
-			if (SelectedTrack == 4)
-			    padNoteOn(x, y, vz);
+			if (getSelectedTrackCurrentPage() == PADS)
+			    padNoteOn(x, y, getVelocityForZAxis(vz), SelectedTrack);
 			else
-			    keyboardNoteOn(x, vz);
+			    keyboardNoteOn(x, getVelocityForYAxis(y), SelectedTrack);
 		else if(y >= 1.93 && index == 1)
-		    if (SelectedTrack == 4)
-			    RepeaterFrequency = 2 * mapTouchToRange(x, 7.0, 190.0, 0.0, 8.0);
-			else
-			    CurrentOctave = mapTouchToRange(x, 7.0, 170.0, 0.0, 5.0);
-			
+			CurrentOctave = mapTouchToRange(x, 7.0, 170.0, 0.0, 5.0);
 	}
 }
 
 //handle main page touch move events---------------------------------
 void mainPageTouchMove(int index, float x, float y, float z, float vz){
     if(index <= 5 && y > 0.15 && y < 1.93){	    //limit roli block to 5 touch events and checks if touch is a held note
-		addPressurePoint (SelectedTrackColor, x, y, z * 20);
-		if (SelectedTrack != 4)
-		    keyboardNoteChange(index, x, y, z, vz);
+		addPressurePoint (getTrackColor(SelectedTrack), x, y, z * 20);
+		if (getSelectedTrackCurrentPage() == KEYBOARD)
+		    keyboardNoteChange(index, x, getVelocityForYAxis(y), SelectedTrack);
 	}
 }
 
 //handle main page touch end events----------------------------------
 void mainPageTouchEnd(int index, float x, float y, float z, float vz){
     if(index == LastTouchIndex)
-		noteOff(vz);
+		noteOff(getVelocityForZAxis(vz), SelectedTrack);
 }
 
 
@@ -474,7 +441,7 @@ void mainPageTouchEnd(int index, float x, float y, float z, float vz){
 //=================================================================================================
 
 //handle settings page touch start events----------------------------
-void settingsPageTouchStart(int index, float x, float y, float z, float vz){
+void settingsPageTouch(int index, float x, float y, float z, float vz){
     if(y < 1.0 && index == 1){
         
         if(x < 1.0 && Tempo > 20)
@@ -501,46 +468,6 @@ void settingsPageTouchStart(int index, float x, float y, float z, float vz){
 		        RootNote = tempRootNote;
 	    }
 		
-		initialiseScale();
-    }
-    else if(y >= 1.93 && index == 1){
-		CurrentScale = mapTouchToRange(x, 7.0, 170.0, 0.0, 17.0);
-		initialiseScale();
-    }
-}
-
-//handle settings page touch move events-----------------------------
-void settingsPageTouchMove(int index, float x, float y, float z, float vz){
-    if(y < 1.0 && index == 1){
-        
-        if(x < 1.0 && Tempo > 20)
-		    Tempo -= 1;
-	    else if(x > 1.0 && Tempo < 199)
-		    Tempo += 1;
-    }
-    else if(y >= 1.1 && y < 1.93 && index == 1){
-	    int tempRootNote = mapTouchToRange(x, 7.0, 170.0, 0.0, 11.0);
-	    
-	    if(tempRootNote >= 5){
-	        tempRootNote--;
-	        
-	        if(y < 1.45 && tempRootNote % 2 == 0)
-		    RootNote = tempRootNote;
-		    else if(y > 1.45 && tempRootNote % 2 == 1)
-		        RootNote = tempRootNote;
-	    }
-	    else{
-	    
-	        if(y < 1.45 && tempRootNote % 2 == 1)
-		        RootNote = tempRootNote;
-		    else if(y > 1.45 && tempRootNote % 2 == 0)
-		        RootNote = tempRootNote;
-	    }
-		
-		initialiseScale();
-    }
-    else if(y >= 1.93 && index == 1){
-		CurrentScale = mapTouchToRange(x, 7.0, 170.0, 0.0, 17.0);
 		initialiseScale();
     }
     else if(y >= 1.93 && index == 1){
@@ -563,72 +490,49 @@ void settingsPageTouchEnd(int index, float x, float y, float z, float vz){
 //=================================================================================================
 
 //send pad note on midi message------------------------------------------
-void padNoteOn(float x, float y, float vz){
+void padNoteOn(float x, float y, int velocity, int channel){
 	
-    //set repeater start
-    RepeaterSubdivision = 1;
-    RepeaterLastSubdivisionTime = getMillisecondCounter();
-    
-	//start new note
+    //start new note
 	int note = getPadNote(x, y);
-	sendNoteOn(Channel - 1, note, getVelocity(vz));
+	sendNoteOn(channel, note, velocity);
 	
 	//stop held note
-	noteOff(vz);
+	noteOff(velocity, channel);
 	
 	//save new held note
 	HeldNote = note;
-	HeldVelocity = getVelocity(vz);
-	HeldPadNoteNumber = getPadNoteNumber(x, y);
+	HeldNoteNumber = getPadNoteNumber(x, y);
 }
 
 //send keyboard note on midi message------------------------------------------
-void keyboardNoteOn(float x, float vz){
+void keyboardNoteOn(float x, int velocity, int channel){
 	
 	//start new note
 	int note = getKeyboardNote(x);
-	sendNoteOn(Channel - 1, note, getVelocity(vz));
+	sendNoteOn(channel, note, velocity);
 	
 	//stop held note
-	noteOff(vz);
+	noteOff(velocity, channel);
 	
 	//save new held note
 	HeldNote = note;
-	HeldVelocity = getVelocity(vz);
-	HeldKeyboardNoteNumber = getKeyboardNoteNumber(x);
+	HeldNoteNumber = getKeyboardNoteNumber(x);
 }
 
 //send keyboard note midi CC messages--------------------------------
-void keyboardNoteChange(int index, float x, float y, float z, float vz){
+void keyboardNoteChange(int index, float x, int velocity, int channel){
 	
 	//when x axis drifts to the next note over, end current note & start new note;
 	if(index == LastTouchIndex && getKeyboardNoteDeviation(x) > 9)
-		keyboardNoteOn(x, vz);
-	
-	//send y axis mod value
-	int modValue = clamp(0, 127, mapTouchToRange(y, 20.0, 175.0, 0.0, 127.0));
-	modValue = 127 - modValue;   
-	sendCC((Channel - 1), 1, modValue);
-}
-
-
-//pad repeate note at set frequency----------------------------------
-void padRepeater(){
-    if (RepeaterFrequency != 0 && RepeaterSubdivision % RepeaterFrequency == 0) {
-        sendNoteOff(Channel - 1, HeldNote, HeldVelocity);
-        sendNoteOn(Channel - 1, HeldNote, HeldVelocity);
-    }
+		keyboardNoteOn(x, velocity, channel);
 }
 
 //send note off midi message-----------------------------------------
-void noteOff(float vz){
-    if (HeldNote != 0){
-        int velocity = getVelocity(vz);
-        sendNoteOff(Channel - 1, HeldNote, velocity);
-        HeldNote = 0;
-        HeldVelocity = 0;
-        HeldKeyboardNoteNumber = 0;
-        HeldPadNoteNumber = 0;
+void noteOff(int velocity, int channel){
+    if (HeldNote != -1){
+        sendNoteOff(channel, HeldNote, velocity);
+        HeldNote = -1;
+        HeldNoteNumber = -1;
     }
 }
 
@@ -651,19 +555,19 @@ int getOffsetSubdivision(){
 
 int getKeyboardNoteDeviation(float x){
     int noteRange = (NumNotesInScale * 2 >= 13) ? 13 : (NumNotesInScale * 2);
-    int scaledHeldKeyboardNoteNumber = (HeldKeyboardNoteNumber * 10) + 5;
+    int scaledHeldNoteNumber = (HeldNoteNumber * 10) + 5;
 	int persicionNoteNumber = int(((CurrentOctave * NumNotesInScale) + map(x * 100, -7.0, 193.0, 0.0, float(noteRange))) * 10);
-    return int(abs(persicionNoteNumber - scaledHeldKeyboardNoteNumber));
+    return int(abs(persicionNoteNumber - scaledHeldNoteNumber));
 }
 
 int getPadNote(float x, float y){
-	return getHeapByte(getPadNoteNumber(x, y) + 84);
+	return getHeapByte(getPadNoteNumber(x, y));
 }
 
 int getPadNoteNumber(float x, float y){   
-    int column = mapTouchToRange(x, -7.0, 172.0, 1.0, 5.0);
-    int row = mapTouchToRange(y, 20.0, 153.0, 0.0, 3.0);    
-	return (row * 5) + column;  
+    int column = mapTouchToRange(x, -7.0, 172.0, 0.0, 4.0);
+    int row = mapTouchToRange(y, 20.0, 153.0, 0.0, 3.0);
+	return (CurrentOctave * NumNotesInScale) + ((row * 5) + column); 
 }
 
 int getKeyboardNote(float x){
@@ -675,8 +579,12 @@ int getKeyboardNoteNumber(float x){
 	return (CurrentOctave * NumNotesInScale) + mapTouchToRange(x, -7.0, 193.0, 0.0, float(noteRange));
 }
 
-int getVelocity(float vz){
-	return clamp (1, 127, int (vz * 127.0));
+int getVelocityForZAxis(float vz){
+	return clamp (1, 127, mapTouchToRange(vz, 0.0, 100.0, 1.0, 127.0));
+}
+
+int getVelocityForYAxis(float y){
+    return clamp (1, 127, mapTouchToRange(y, 21.0, 178.0, 1.0, 127.0));
 }
 
 int transposeScaleBitMask(){
@@ -684,4 +592,28 @@ int transposeScaleBitMask(){
     int rootNote = RootNote;
     
     return ((scaleBitMask << rootNote) | (scaleBitMask >> (12 - rootNote)) & 0x0FFF);
+}
+
+int getSelectedTrackCurrentPage(){
+    return getHeapByte(SelectedTrack + 97);
+}
+
+void setSelectedTrackCurrentPage(int page){
+    setHeapByte(SelectedTrack + 97, page);
+}
+
+void setTrackColor(int track, int color){
+    setHeapInt((track * 4) + 104, color);
+}
+
+void setDimTrackColor(int track, int color){
+    setHeapInt((track * 4) + 132, color);
+}
+
+int getTrackColor(int track){
+    return getHeapInt((track * 4) + 104);
+}
+
+int getDimTrackColor(int track){
+    return getHeapInt((track * 4) + 132);
 }
