@@ -2,9 +2,8 @@
 // --------------------- HEAP LAYOUT ---------------------
 //
 // current keyboard scale notes:    0 - 96
-// current track's keyboard mode:   97 - 103
-// track colors:                    104 - 131
-// dim track colors:                132 - 159
+// track colors:                    97 - 124
+// dim track colors:                125 - 152
 //
 // -------------------------------------------------------
 
@@ -12,10 +11,14 @@
 
 
 
-#heapsize: 3000
+#heapsize: 2500
 const int SETTINGS_DELAY = 100;
-const int SHORT_DELAY = 500;
-const int LONG_DELAY  = 1000;
+const int SHORT_DELAY    = 500;
+const int LONG_DELAY     = 1000;
+const int ONE_MINUTE     = 60000;
+
+const int NOTE_SUBDIVISION  = 4;
+const int SEQUENCER_PERCISION_SUBDIVISION  = 2;
 
 const int WARMER_PAD_COLOR        = 0x44FFFF00;     const int COOLER_PAD_COLOR        = 0x4400FFFF;
 const int DIM_WARMER_PAD_COLOR    = 0x22FFFF00;     const int DIM_COOLER_PAD_COLOR    = 0x2200FFFF;
@@ -52,7 +55,7 @@ int   SelectedSettingsPage;
 
 bool  IsSettingsOpen;
 
-int   CurrentOctave;
+int   CurrentHalfOctave;
 int   ScaleBitMask;
 int   RootNote;
 int   CurrentScale;
@@ -64,6 +67,9 @@ int   HeldNoteNumber;
 int   LastTouchIndex;
 int   LastTouchIndexStart;
 
+int   MidiChannel;
+bool  MPE;
+
 
 
 
@@ -74,23 +80,24 @@ int   LastTouchIndexStart;
 
 //sets initial values------------------------------------------------
 void initialise(){
-
 	setLocalConfigActiveState (10, true, true);
 	
 	Subdivision          = 0;
-	SequenceLength       = 64;
+	SequenceLength       = 128;
 	Tempo                = 120;
-	TempoDelay           = (60000 / Tempo) / 8;
+	TempoDelay           = ((ONE_MINUTE / Tempo) / NOTE_SUBDIVISION) / SEQUENCER_PERCISION_SUBDIVISION;
 	LastSubdivisionTime  = getMillisecondCounter();
 	LastFrameTime        = getMillisecondCounter();
 	settingsMovmentTimer = getMillisecondCounter();
 	IsButtonHeld         = false;
 	Pause                = true;
-	CurrentOctave        = 3;
+	CurrentHalfOctave    = 7;
 	HeldNote             = -1;
     HeldNoteNumber       = -1;
     SelectedSettingsPage = 0;
     SelectedPageType     = 0;
+    MidiChannel          = 1;
+    MPE                  = false;
 
 	initialiseScale();
 	
@@ -239,6 +246,9 @@ void DrawSettingsPageOne(){
 }
 
 void DrawSettingsPageTwo(){
+}
+
+void DrawSettingsPageThree(){
     if(CurrentScale / 9){
         drawNumber(CurrentScale + 1, 0xffffffff, 2, 3);
     }
@@ -246,8 +256,7 @@ void DrawSettingsPageTwo(){
         drawNumber(CurrentScale + 1, 0xffffffff, 5, 3);
     }
     DrawBitMap(3, 12, 4, GetSettingsPageActiveColor(SelectedSettingsPage), 0x0BA);
-    DrawBitMap(3, 0, 4, GetSettingsPageActiveColor(SelectedSettingsPage), 0x38);
-    
+    DrawBitMap(3, 0, 4, GetSettingsPageActiveColor(SelectedSettingsPage), 0x38);  
     
     int noteIndex = 0;
     int shiftKey = 0;
@@ -268,24 +277,33 @@ void DrawSettingsPageTwo(){
 	        
         if(transposedScaleBits & mask){
             if(noteIndex == rootNote){
-                fillRect(GetSettingsPageActiveColor(SelectedSettingsPage), 1 + noteIndex, 10 + shiftKey, 1, 2);
+                fillRect(GetSettingsPageActiveColor(SelectedSettingsPage), 1 + noteIndex, 9 + shiftKey, 1, 2);
             }
             else{
-                fillRect(WHITE_COLOR, 1 + noteIndex, 10 + shiftKey, 1, 2);
+                fillRect(WHITE_COLOR, 1 + noteIndex, 9 + shiftKey, 1, 2);
             }
         }
         else{
-            fillRect(DIM_WHITE_COLOR, 1 + noteIndex, 10 + shiftKey, 1, 2);
+            fillRect(DIM_WHITE_COLOR, 1 + noteIndex, 9 + shiftKey, 1, 2);
         }
 		        
         noteIndex++;
 	}
-}
-
-void DrawSettingsPageThree(){
+	
+	fillRect(GetSettingsPageActiveColor(SelectedSettingsPage), CurrentHalfOctave, 14, 3, 1);
 }
 
 void DrawSettingsPageFour(){
+    if(SequenceLength / 100){
+        drawNumber(SequenceLength, 0xffffffff, 0, 3);
+    }
+    else {
+        drawNumber(SequenceLength, 0xffffffff, 3, 3);
+    }
+    DrawBitMap(3, 11, 9, GetSettingsPageActiveColor(SelectedSettingsPage), 0x0BA);
+    DrawBitMap(3, 1, 9, GetSettingsPageActiveColor(SelectedSettingsPage), 0x38);
+    fillRect(DIM_WHITE_COLOR, 9, 9, 1, 5);
+    DrawBitMap(5, 5, 9, WHITE_COLOR, 0x447D04);
 }
 
 void DrawSettingsPageFive(){
@@ -297,13 +315,27 @@ void DrawSettingsPageFive(){
     }
     DrawBitMap(3, 11, 9, GetSettingsPageActiveColor(SelectedSettingsPage), 0x0BA);
     DrawBitMap(3, 1, 9, GetSettingsPageActiveColor(SelectedSettingsPage), 0x38);
-    DrawBitMap(5, 5, 9, WHITE_COLOR, 0x1FAE554);
+    DrawBitMap(5, 5, 9, WHITE_COLOR, 0x1FAc444);
+	DrawBitMap(5, 5, 9, DIM_WHITE_COLOR, 0x1110);
 }
 
 void DrawSettingsPageSix(){
 }
 
 void DrawSettingsPageSeven(){
+    if(MidiChannel / 10){
+        drawNumber(MidiChannel, 0xffffffff, 2, 3);
+    }
+    else {
+        drawNumber(MidiChannel, 0xffffffff, 5, 3);
+    }
+    DrawBitMap(3, 12, 4, GetSettingsPageActiveColor(SelectedSettingsPage), 0x0BA);
+    DrawBitMap(3, 0, 4, GetSettingsPageActiveColor(SelectedSettingsPage), 0x38);
+    
+    int MPEActive = MPE ? GetSettingsPageActiveColor(SelectedSettingsPage) : DIM_WHITE_COLOR;
+    DrawBitMap(5, 0, 9, MPEActive, 0x118D771);
+	DrawBitMap(5, 5, 9, MPEActive, 0x0213A4E);
+	DrawBitMap(5, 10, 9, MPEActive, 0x1E1385E);
 }
 
 //draws tracks-------------------------------------------------------
@@ -317,7 +349,7 @@ void drawKeyboard(){
 void drawPads(){
     blendGradientRect(0x44001880, 0x44001880, 0x44007033, 0x44007033, 0, 0, 15, 15);
     
-    int padNumber = (CurrentOctave * NumNotesInScale);
+    int padNumber = (CurrentHalfOctave * (NumNotesInScale / 2));
     for (int row = 0; row < 5; row++ ) {
         for (int column = 0; column < 5; column++){         
             int padTopColor;
@@ -340,8 +372,8 @@ void drawPads(){
 
 void drawOctaveSelector(){
     blendRect(0x66007033, 0, 14, 15, 1);
-    blendRect(0xDD000000, (-10 + (CurrentOctave * 2)), 14, 10, 1);
-	blendRect(0xDD000000, (5 + (CurrentOctave * 2))  , 14, 10, 1);
+    blendRect(0xDD000000, (-12 + CurrentHalfOctave), 14, 12, 1);
+	blendRect(0xDD000000, (3 + CurrentHalfOctave)  , 14, 12, 1);
 }
 
 //draws frame, gets called 25 times per second-----------------------
@@ -349,7 +381,6 @@ void drawFrame(){
 	clearDisplay();
     fadePressureMap();
 	fadePressureMap();
-		
 
 	if (SelectedPageType == PADS)
 	    drawPads();
@@ -364,7 +395,7 @@ void drawFrame(){
 	}
 	    
 	if(Pause == false){
-		fillRect(0xffffff, Subdivision / 8, 0, 1, 1);
+		fillRect(0xffffff, ((Subdivision / SEQUENCER_PERCISION_SUBDIVISION) / NOTE_SUBDIVISION) % 16, 0, 1, 1);
 	}
 	
 	drawGlobalSettingsPages();
@@ -380,10 +411,10 @@ void repaint(){
 		while(!breakForFrame){
 			if(LastSubdivisionTime + TempoDelay < getMillisecondCounter() && Pause != true){
 				LastSubdivisionTime += TempoDelay;
-				//if(Subdivision % 2 == 0)
+				//if(Subdivision % SEQUENCER_PERCISION_SUBDIVISION == 0)
 					//triggerNoteSequence();
 				//triggerModSequence();
-				Subdivision = (Subdivision + 1) % (SequenceLength * 2);
+				Subdivision = (Subdivision + 1) % (SequenceLength * SEQUENCER_PERCISION_SUBDIVISION);
 				
 			}
 			if(LastFrameTime + 40 < getMillisecondCounter()){
@@ -419,6 +450,7 @@ void HandleButtonHeld(){
         }
 	    if(getMillisecondCounter() > ButtonPressedTime + LONG_DELAY){
 	        IsRecording = false;
+	        Pause = true;
 		    IsSettingsOpen = true;
 	    }
     }
@@ -455,7 +487,7 @@ void handleButtonUp(int index){
 //determine touches action-------------------------------------------
 void touchStart(int index, float x, float y, float z, float vz){
 	if(IsSettingsOpen){
-	    settingsPageTouch(index, x, y, z, vz);
+	    settingsPageTouch(index, x, y, z, vz, false);
 	    settingsMovmentTimer = getMillisecondCounter();
 	}
 	else{
@@ -465,9 +497,11 @@ void touchStart(int index, float x, float y, float z, float vz){
 
 //send out note CC, pitchbend, and pressure data---------------------
 void touchMove(int index, float x, float y, float z, float vz){
-	if(IsSettingsOpen && getMillisecondCounter() > settingsMovmentTimer + SETTINGS_DELAY){
-	    settingsPageTouch(index, x, y, z, vz);
-	    settingsMovmentTimer = getMillisecondCounter();
+	if(IsSettingsOpen){
+	    if(getMillisecondCounter() > settingsMovmentTimer + SETTINGS_DELAY){
+	        settingsPageTouch(index, x, y, z, vz, true);
+	        settingsMovmentTimer = getMillisecondCounter();
+	    }
 	}
 	else{
 	    mainPageTouchMove(index, x, y, z, vz);
@@ -503,13 +537,13 @@ void mainPageTouchStart(int index, float x, float y, float z, float vz){
 	//determine touch action
 	if(index <= 5){
 	    if (SelectedPageType == PADS){
-	        padNoteOn(x, y, getVelocityForZAxis(vz), 1);
+	        padNoteOn(x, y, getVelocityForZAxis(vz), MidiChannel);
 	    }
 	    else{
 		    if(y < 1.93)
-			    keyboardNoteOn(x, getVelocityForYAxis(y), 1);
+			    keyboardNoteOn(x, getVelocityForYAxis(y), MidiChannel);
 		    else if(y >= 1.93 && index == 1)
-			    CurrentOctave = mapTouchToRange(x, 7.0, 170.0, 0.0, 5.0);
+			    CurrentHalfOctave = mapTouchToRange(x, 7.0, 170.0, 0.0, 11.0);
 	    }
 	}
 }
@@ -519,10 +553,10 @@ void mainPageTouchMove(int index, float x, float y, float z, float vz){
      if(index <= 5){	    //limit roli block to 5 touch events and checks if touch is a held note
          if(SelectedPageType == KEYBOARD && y < 1.93){
 		    addPressurePoint (PURPLE_COLOR, x, y, z * 20);
-		    keyboardNoteChange(index, x, getVelocityForYAxis(y), 1);
+		    keyboardNoteChange(index, x, getVelocityForYAxis(y), MidiChannel);
          }
          else if(SelectedPageType == PADS){
-            PadNoteChange(index, x, y, getVelocityForYAxis(y), 1);
+            PadNoteChange(index, x, y, getVelocityForYAxis(y), MidiChannel);
          }
 	}
 }
@@ -530,7 +564,7 @@ void mainPageTouchMove(int index, float x, float y, float z, float vz){
 //handle main page touch end events----------------------------------
 void mainPageTouchEnd(int index, float x, float y, float z, float vz){
     if(index == LastTouchIndex)
-		noteOff(getVelocityForZAxis(vz), 1);
+		noteOff(getVelocityForZAxis(vz), MidiChannel);
 }
 
 
@@ -542,43 +576,46 @@ void mainPageTouchEnd(int index, float x, float y, float z, float vz){
 //=================================================================================================
 
 //handle settings page touch start events----------------------------
-void settingsPageTouch(int index, float x, float y, float z, float vz){
+void settingsPageTouch(int index, float x, float y, float z, float vz, bool touchHeld){
     if (index == 1) {
         if(y <= 0.15){
 			    SelectedSettingsPage = mapTouchToRange(x, 7.0, 170.0, 0.0, 6.0);
         }
         else if(SelectedSettingsPage == 0){
-            SettingsPageOneTouch(x, y);
+            SettingsPageOneTouch(x, y, touchHeld);
         }
         else if(SelectedSettingsPage == 1){
-            SettingsPageTwoTouch(x, y);
+            SettingsPageTwoTouch(x, y, touchHeld);
         }
         else if(SelectedSettingsPage == 2){
-            SettingsPageThreeTouch(x, y);
+            SettingsPageThreeTouch(x, y, touchHeld);
         }
         else if(SelectedSettingsPage == 3){
-            SettingsPageFourTouch(x, y);
+            SettingsPageFourTouch(x, y, touchHeld);
         }
         else if(SelectedSettingsPage == 4){
-            SettingsPageFiveTouch(x, y);
+            SettingsPageFiveTouch(x, y, touchHeld);
         }
         else if(SelectedSettingsPage == 5){
-            SettingsPageSixTouch(x, y);
+            SettingsPageSixTouch(x, y, touchHeld);
         }
         else if(SelectedSettingsPage == 6){
-            SettingsPageSevenTouch(x, y);
+            SettingsPageSevenTouch(x, y, touchHeld);
         }
     }
 }
 
-void SettingsPageOneTouch(float x, float y){
+void SettingsPageOneTouch(float x, float y, bool touchHeld){
     int column = mapTouchToRange(x, -7.0, 100.0, 0.0, 1.0);
     int row = mapTouchToRange(y, 15.0, 100.0, 0.0, 1.0);
 	SelectedPageType = ((row * 2) + column); 
 }
 
-void SettingsPageTwoTouch(float x, float y){
-    if(y > 0.15 && y <= 1.3){
+void SettingsPageTwoTouch(float x, float y, bool touchHeld){
+}
+
+void SettingsPageThreeTouch(float x, float y, bool touchHeld){
+    if(y > 0.15 && y <= 1.1){
 		if (x < 0.3 && CurrentScale > 0){
 		    CurrentScale -= 1;
 		    initialiseScale();
@@ -588,7 +625,7 @@ void SettingsPageTwoTouch(float x, float y){
 		    initialiseScale();
 		}
     }
-    else if(y > 1.3){
+    else if(y >= 1.1 && y < 1.8){
 	    int tempRootNote = mapTouchToRange(x, 7.0, 170.0, 0.0, 11.0);
 	    
 	    if(tempRootNote >= 5){
@@ -609,34 +646,57 @@ void SettingsPageTwoTouch(float x, float y){
 		
 		initialiseScale();
     }
+    else if(y > 1.8){
+        CurrentHalfOctave = mapTouchToRange(x, 7.0, 170.0, 0.0, 11.0);
+    }
 }
 
-void SettingsPageThreeTouch(float x, float y){
-}
-
-void SettingsPageFourTouch(float x, float y){
-}
-
-void SettingsPageFiveTouch(float x, float y){
+void SettingsPageFourTouch(float x, float y, bool touchHeld){
     if(y > 1.2 && y <= 1.6){
-		if (x > 0.1 && x < 0.4 && Tempo > 80){
+		if (x > 0.1 && x < 0.4 && SequenceLength > 1){
+		    SequenceLength -= 1;
+		}
+		if (x > 1.6 && x < 1.9 && SequenceLength < 128){
+		    SequenceLength += 1;
+		}
+    }
+}
+
+void SettingsPageFiveTouch(float x, float y, bool touchHeld){
+    if(y > 1.2 && y <= 1.6){
+		if (x > 0.1 && x < 0.4 && Tempo > 40){
 		    Tempo -= 1;
 		}
-		if (x > 1.6 && x < 1.9 && Tempo < 120){
+		if (x > 1.6 && x < 1.9 && Tempo < 199){
 		    Tempo += 1;
 		}
     }
 }
 
-void SettingsPageSixTouch(float x, float y){
+void SettingsPageSixTouch(float x, float y, bool touchHeld){
 }
 
-void SettingsPageSevenTouch(float x, float y){
+void SettingsPageSevenTouch(float x, float y, bool touchHeld){
+    if(y > 0.15 && y <= 1.1){
+		if (x < 0.3 && MidiChannel > 1){
+		    MidiChannel -= 1;
+		    initialiseScale();
+		}
+		if (x > 1.7 && MidiChannel < 16){
+		    MidiChannel += 1;
+		    initialiseScale();
+		}
+    }
+    else if(y > 1.1 && !touchHeld){
+        MPE = !MPE;
+    }
 }
 
 //handle settings page touch end events------------------------------
 void settingsPageTouchEnd(int index, float x, float y, float z, float vz){
-    TempoDelay = (60000 / Tempo) / 8;
+    if(SelectedSettingsPage == 4){
+        TempoDelay = ((ONE_MINUTE / Tempo) / NOTE_SUBDIVISION) / SEQUENCER_PERCISION_SUBDIVISION;
+    }
 }
 
 
@@ -713,13 +773,13 @@ int mapTouchToRange(float v, float inMin, float inMax, float outMin, float outMa
 }
 
 int getOffsetSubdivision(){
-	return ((Subdivision + 1) / 2) % SequenceLength;
+	return ((Subdivision + 1) / SEQUENCER_PERCISION_SUBDIVISION) % SequenceLength;
 }
 
 int getKeyboardNoteDeviation(float x){
     int noteRange = (NumNotesInScale * 2 >= 13) ? 13 : (NumNotesInScale * 2);
     int scaledHeldNoteNumber = (HeldNoteNumber * 10) + 5;
-	int persicionNoteNumber = int(((CurrentOctave * NumNotesInScale) + map(x * 100, -7.0, 193.0, 0.0, float(noteRange))) * 10);
+	int persicionNoteNumber = int(((CurrentHalfOctave * (NumNotesInScale / 2)) + map(x * 100, -7.0, 193.0, 0.0, float(noteRange))) * 10);
     return int(abs(persicionNoteNumber - scaledHeldNoteNumber));
 }
 
@@ -730,7 +790,7 @@ int getPadNote(float x, float y){
 int getPadNoteNumber(float x, float y){   
     int column = mapTouchToRange(x, -7.0, 172.0, 0.0, 4.0);
     int row = mapTouchToRange(y, 0.0, 165.0, 0.0, 4.0);
-	return (CurrentOctave * NumNotesInScale) + ((row * 5) + column); 
+	return (CurrentHalfOctave * (NumNotesInScale / 2)) + ((row * 5) + column); 
 }
 
 int getKeyboardNote(float x){
@@ -739,7 +799,7 @@ int getKeyboardNote(float x){
 
 int getKeyboardNoteNumber(float x){
 	int noteRange = (NumNotesInScale * 2 >= 13) ? 13 : (NumNotesInScale * 2);
-	return (CurrentOctave * NumNotesInScale) + mapTouchToRange(x, -7.0, 193.0, 0.0, float(noteRange));
+	return (CurrentHalfOctave * (NumNotesInScale / 2)) + mapTouchToRange(x, -7.0, 193.0, 0.0, float(noteRange));
 }
 
 int getVelocityForZAxis(float vz){
